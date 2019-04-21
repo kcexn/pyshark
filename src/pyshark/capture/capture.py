@@ -14,6 +14,7 @@ from pyshark.tshark.tshark import get_process_path, get_tshark_display_filter_fl
 from pyshark.tshark.tshark_json import packet_from_json_packet
 from pyshark.tshark.tshark_xml import packet_from_xml_packet, psml_structure_from_xml
 
+# TODO: Provide clear separation between an iterable and an iterator in the code.
 
 class TSharkCrashException(Exception):
     pass
