@@ -14,26 +14,26 @@ class FileCapture(CaptureABC):
     """
 
     def __init__(
-            self, 
-            input_file=None, 
-            keep_packets=True, 
-            display_filter=None, 
+            self,
+            input_file=None,
+            keep_packets=True,
+            display_filter=None,
             only_summaries=False,
-            decryption_key=None, 
-            encryption_type='wpa-pwk', 
+            decryption_key=None,
+            encryption_type='wpa-pwk',
             decode_as=None,
-            disable_protocol=None, 
-            tshark_path=None, 
+            disable_protocol=None,
+            tshark_path=None,
             override_prefs=None,
-            use_json=False, 
-            output_file=None, 
-            include_raw=False, 
-            eventloop=None, 
+            use_json=False,
+            output_file=None,
+            include_raw=False,
+            eventloop=None,
             custom_parameters=None
     ):
         """
         Creates a packet capture object by reading from file.
-    
+
         :param keep_packets: Whether to keep packets after reading 
         them via next(). Used to conserve memory when reading large 
         caps (can only be used along with the "lazy" option!)
@@ -67,25 +67,31 @@ class FileCapture(CaptureABC):
         """
         super(FileCapture, self).\
             __init__(
-                display_filter=display_filter, 
+                display_filter=display_filter,
                 only_summaries=only_summaries,
-                decryption_key=decryption_key, 
+                decryption_key=decryption_key,
                 encryption_type=encryption_type,
-                decode_as=decode_as, 
-                disable_protocol=disable_protocol, 
+                decode_as=decode_as,
+                disable_protocol=disable_protocol,
                 tshark_path=tshark_path,
-                override_prefs=override_prefs, 
-                use_json=use_json, 
+                override_prefs=override_prefs,
+                use_json=use_json,
                 output_file=output_file,
-                include_raw=include_raw, 
-                eventloop=eventloop, 
+                include_raw=include_raw,
+                eventloop=eventloop,
                 custom_parameters=custom_parameters
-            )
+        )
         self.input_filename = input_file
-        if not isinstance(input_file, basestring):
+        try:
+            path_exists = os.path.exists(self.input_filename)
+        except TypeError:
             self.input_filename = input_file.name
-        if not os.path.exists(self.input_filename):
-            raise FileNotFoundError(str(self.input_filename))
+            path_exists = os.path.exists(self.input_filename)
+        if not path_exists:
+            raise FileNotFoundError(
+                    '[Errno 2] No such file or '
+                    'directory: {}'.format(self.input_filename)
+            )
         self.keep_packets = keep_packets
         self._packet_generator = self._packets_from_tshark_sync()
 
@@ -104,30 +110,32 @@ class FileCapture(CaptureABC):
 
     def __getitem__(self, packet_index):
         if not self.keep_packets:
-            raise NotImplementedError('Cannot use getitem if packets \
-                    are not kept')
+            raise NotImplementedError('Cannot use getitem if packets are not' 
+                                      'kept')
             # We may not yet have this packet
         while packet_index >= len(self._packets):
             try:
                 self.next()
             except StopIteration:
-                # We read the whole file, and there's still not such 
+                # We read the whole file, and there's still not such
                 # packet.
-                raise KeyError('Packet of index %d does not exist in capture'\
-                        % packet_index)
+                raise KeyError('Packet of index %d does not exist in capture'
+                               % packet_index)
         return super(FileCapture, self).__getitem__(packet_index)
 
     def get_parameters(self, packet_count=None):
         return super(FileCapture, self).\
-                get_parameters(packet_count=packet_count) \
-                + ['-r', self.input_filename]
+            get_parameters(packet_count=packet_count) \
+            + ['-r', self.input_filename]
 
     def __repr__(self):
         if self.keep_packets:
             return '<%s %s>' % (self.__class__.__name__, self.input_filename)
         else:
-            return '<%s %s (%d packets)>' % (self.__class__.__name__, 
-                    self.input_filename, len(self._packets))
+            return '<%s %s (%d packets)>' % (self.__class__.__name__,
+                                             self.input_filename, 
+                                             len(self._packets)
+                                             )
 
     def __iter__(self):
         pass
