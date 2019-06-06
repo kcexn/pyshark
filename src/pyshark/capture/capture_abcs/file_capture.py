@@ -2,6 +2,15 @@ import os
 import sys
 
 from pyshark.capture.abc.capture_abc import CaptureABC
+from pyshark.tshark.tshark import get_process_path, \
+    get_tshark_display_filter_flag, \
+    tshark_supports_json, \
+    TSharkVersionException
+from pyshark.tshark.tshark_json import packet_from_json_packet
+from pyshark.tshark.tshark_xml import packet_from_xml_packet, \
+    psml_structure_from_xml
+from pyshark.tshark.Tshark.tshark import TsharkProcess
+
 
 # Define basestring as str if we're in python3.
 if sys.version_info >= (3, 0):
@@ -65,6 +74,21 @@ class FileCapture(CaptureABC):
         :param custom_parameters: A dict of custom parameters to pass 
         to tshark, i.e. {"--param": "value"}
         """
+        self.input_filename = input_file
+        try:
+            path_exists = os.path.exists(self.input_filename)
+        except TypeError:
+            self.input_filename = input_file.name
+            path_exists = os.path.exists(self.input_filename)
+        if not path_exists:
+            raise FileNotFoundError(
+                    '[Errno 2] No such file or '
+                    'directory: {}'.format(self.input_filename)
+            )
+        self.keep_packets = keep_packets
+        self.tshark_path = tshark_path
+        self.use_json = use_json
+        self.only_summaries = only_summaries
         super(FileCapture, self).\
             __init__(
                 display_filter=display_filter,
@@ -81,32 +105,6 @@ class FileCapture(CaptureABC):
                 eventloop=eventloop,
                 custom_parameters=custom_parameters
         )
-        self.input_filename = input_file
-        try:
-            path_exists = os.path.exists(self.input_filename)
-        except TypeError:
-            self.input_filename = input_file.name
-            path_exists = os.path.exists(self.input_filename)
-        if not path_exists:
-            raise FileNotFoundError(
-                    '[Errno 2] No such file or '
-                    'directory: {}'.format(self.input_filename)
-            )
-        self.keep_packets = keep_packets
-        self._packet_generator = self._packets_from_tshark_sync()
-
-    def next(self):
-        """
-        Returns the next packet in the cap.
-        If the capture's keep_packets flag is True, will also keep it 
-        in the internal packet list.
-        """
-        if not self.keep_packets:
-            return self._packet_generator.send(None)
-        elif self._current_packet >= len(self._packets):
-            packet = self._packet_generator.send(None)
-            self._packets += [packet]
-        return super(FileCapture, self).next_packet()
 
     def __getitem__(self, packet_index):
         if not self.keep_packets:
@@ -138,4 +136,36 @@ class FileCapture(CaptureABC):
                                              )
 
     def __iter__(self):
-        pass
+        return FileCaptureIterator(
+                self.tshark_path,
+                params = self.get_parameters(),
+                filename = self.input_filename,
+                use_json = self.use_json,
+                summaries = self.only_summaries
+                )
+
+
+#TODO: Create a new FileCapture Iterator Class
+class FileCaptureIterator():
+    def __init__(self, 
+            tshark,
+            params, 
+            filename,
+            use_json = True,
+            summaries = False):
+        self._tshark = TsharkProcess(
+                tshark_path = tshark,
+                only_summaries = summaries,
+                parameters = params,
+                use_json = True
+                )
+        self._packet_generator = \
+                self._tshark._packets_from_tshark_sync(
+                        )
+    def __next__(self):
+        return next(self._packet_generator)
+    def __iter__(self):
+        return self
+
+
+

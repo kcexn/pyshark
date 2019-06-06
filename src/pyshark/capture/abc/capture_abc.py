@@ -71,11 +71,6 @@ class CaptureABC(ABC):
         if include_raw and not use_json:
             raise RawMustUseJsonException('use_json must be True if '
                                           'include_raw')
-        self._tshark = TsharkProcess(
-                use_json = use_json,
-                tshark_path = tshark_path,
-                only_summaries = only_summaries
-        )
         if (encryption_type and
                 encryption_type.lower() in
                 self.SUPPORTED_ENCRYPTION_STANDARDS
@@ -85,6 +80,12 @@ class CaptureABC(ABC):
             raise UnkownEncryptionStandardException(
                 'Only the following standards are supported: %s.'
                 % ', '.join(self.SUPPORTED_ENCRYPTION_STANDARDS))
+#        self._tshark = TsharkProcess(
+#                use_json = use_json,
+#                tshark_path = tshark_path,
+#                only_summaries = only_summaries,
+#                parameters = self.get_parameters()
+#        )
 
     @classmethod
     def _extract_packet_json_from_data(cls, data, got_first_packet=True):

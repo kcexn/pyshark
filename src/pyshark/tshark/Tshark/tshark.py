@@ -1,5 +1,6 @@
 import asyncio
 import os
+import subprocess
 import threading
 
 from pyshark.tshark.tshark import get_process_path, \
@@ -14,16 +15,20 @@ class TsharkProcess():
     """ Class to encapsulate methods related to Tshark
     """
 
+    DEFAULT_BATCH_SIZE = 2 ** 16
+
     def __init__(
             self, 
             eventloop = None,
             use_json = False,
             tshark_path = None,
-            only_summaries = False
+            only_summaries = False,
+            parameters = None
     ):
         self.use_json = use_json
         self.tshark_path = tshark_path
         self._only_summaries = only_summaries
+        self._parameters = [] if parameters is None else parameters
 
         if eventloop is None:
             self._setup_eventloop()
@@ -48,8 +53,8 @@ class TsharkProcess():
 
     def _packets_from_tshark_sync(
             self,
-            packet_count=None,
-            existing_process=None
+            packet_count=None
+#            existing_process = None
     ):
         """
         Returns a generator of packets.
@@ -60,9 +65,8 @@ class TsharkProcess():
         :param packet_count: If given, stops after this amount of
         packets is captured.
         """
-        tshark_process = existing_process or \
-            self.eventloop.run_until_complete(self._get_tshark_process())
-        psml_strucutre, data = self.\
+        tshark_process = self._tshark_process
+        psml_structure, data = self.\
             eventloop.\
             run_until_complete(
                 self._get_psml_struct(tshark_process.stdout)
@@ -81,7 +85,7 @@ class TsharkProcess():
                         )
                     )
                 except EOFError:
-                    self._log.debug('EOF reached (sync)')
+#                    self._log.debug('EOF reached (sync)')
                     break
 
                 if packet:
@@ -104,8 +108,9 @@ class TsharkProcess():
                 process.kill()
                 return await asyncio.wait_for(process.wait(), 1)
             except concurrent.futures.TimeoutError:
-                self._log.debug('Waiting for process to close failed, may have'
-                                'zombie process.')
+                pass
+#                self._log.debug('Waiting for process to close failed, may have'
+#                                'zombie process.')
             except ProcessLookupError:
                 pass
             except OSError:
@@ -135,34 +140,21 @@ class TsharkProcess():
         else:
             output_type = 'psml' if self._only_summaries else 'pdml'
         parameters = [self._get_tshark_path(), '-l', '-n', '-T', output_type] \
-            + self.get_parameters(packet_count=packet_count)
+                + self._parameters
 
-        self._log.debug('Creating TShark subprocess with parameters: ' +
-                        ' '.join(parameters))
-        self._log.debug('Executable: %s' % parameters[0])
+#        self._log.debug('Creating TShark subprocess with parameters: ' +
+#                        ' '.join(parameters))
+#        self._log.debug('Executable: %s' % parameters[0])
         tshark_process = await \
             asyncio.create_subprocess_exec(*parameters,
                                            stdout=subprocess.PIPE,
                                            stderr=self._stderr_output(),
                                            stdin=stdin)
-        self._created_new_process(parameters, tshark_process)
         return tshark_process
-
-    def _created_new_process(self, parameters, process, process_name="TShark"):
-        self._log.debug(process_name + ' subprocess created')
-        if process.returncode is not None and process.returncode != 0:
-            raise TSharkCrashException(
-                '{} seems to have crashed.'
-                'Try updating it.'
-                '(command ran: "{}")'.format(process_name,
-                                             ' '.join(parameters)
-                                             )
-            )
-        self._running_processes.add(process)
 
     def _stderr_output(self):
         # Ignore stderr output unless in debug mode (sent to console)
-        return None if self.debug else open(os.devnull, "w")
+        return None # if self.debug else open(os.devnull, "w")
 
     def _get_tshark_path(self):
         return get_process_path(self.tshark_path)
@@ -231,3 +223,25 @@ class TsharkProcess():
             # Reached EOF
             raise EOFError()
         return None, existing_data
+
+    @classmethod
+    def _extract_packet_json_from_data(cls, data, got_first_packet=True):
+        tag_start = 0
+        if not got_first_packet:
+            tag_start = data.find(b"{")
+            if tag_start == -1:
+                return None, data
+        closing_tag = cls._get_json_separator()
+        tag_end = data.find(closing_tag)
+        if tag_end == -1:
+            closing_tag = ("}%s%s]" % (os.linesep, os.linesep)).encode()
+            tag_end = data.find(closing_tag)
+        if tag_end != -1:
+            # Include closing parenthesis but not comma
+            tag_end += len(closing_tag) - 1
+            return data[tag_start:tag_end], data[tag_end + 1:]
+        return None, data
+
+    @classmethod
+    def _get_json_separator(cls):
+        return ("}%s%s  ," % (os.linesep, os.linesep)).encode()
