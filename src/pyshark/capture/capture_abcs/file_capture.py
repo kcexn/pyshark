@@ -151,14 +151,18 @@ class FileCaptureIterator():
             tshark,
             params, 
             filename,
+            process = None,
             use_json = True,
             summaries = False):
-        self._tshark = TsharkProcess(
-                tshark_path = tshark,
-                only_summaries = summaries,
-                parameters = params,
-                use_json = True
-                )
+        if process is None:
+            self._tshark = TsharkProcess(
+                    tshark_path = tshark,
+                    only_summaries = summaries,
+                    parameters = params,
+                    use_json = True
+                    )
+        else:
+            self._tshark = process
         self._packet_generator = \
                 self._tshark._packets_from_tshark_sync(
                         )
