@@ -216,9 +216,3 @@ pip-log.txt
 
 # Pycharm
 .idea/
-
-# kcexn local gitignores
-test_pcaps/
-Pipfile
-example_scripts/
-dependencies/
