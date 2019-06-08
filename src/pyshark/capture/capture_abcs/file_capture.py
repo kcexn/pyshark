@@ -86,6 +86,7 @@ class FileCapture(CaptureABC):
                     'directory: {}'.format(self.input_filename)
             )
         self.keep_packets = keep_packets
+        self.__pkts = []
         self.tshark_path = tshark_path
         self.use_json = use_json
         self.only_summaries = only_summaries
@@ -106,20 +107,39 @@ class FileCapture(CaptureABC):
                 custom_parameters=custom_parameters
         )
 
+
     def __getitem__(self, packet_index):
-        if not self.keep_packets:
-            raise NotImplementedError('Cannot use getitem if packets are not' 
-                                      'kept')
-            # We may not yet have this packet
-        while packet_index >= len(self._packets):
-            try:
-                self.next()
-            except StopIteration:
-                # We read the whole file, and there's still not such
-                # packet.
-                raise KeyError('Packet of index %d does not exist in capture'
-                               % packet_index)
-        return super(FileCapture, self).__getitem__(packet_index)
+        # TODO: There must be a better way to conditionally 
+        # overload the getitem method with user defined methods.
+        if self.keep_packets:
+            return self._cached_get_item(packet_index)
+        else:
+            return self._get_item(packet_index)
+
+    def _cached_get_item(self, packet_index):
+        if packet_index < 0:
+            raise IndexError('packet index must be positive')
+        if packet_index >= len(self.__pkts):
+            for idx,pkt in enumerate(self):
+                if len(self.__pkts) <= idx:
+                    self.__pkts.append(pkt)
+                if idx == packet_index:
+                    return pkt
+                else:
+                    continue
+        else:
+            return self.__pkts[packet_index]
+        raise IndexError('packet index out of range')
+
+    def _get_item(self, packet_index):
+        if packet_index < 0:
+            raise IndexError('packet index must be positive')
+        for idx,pkt in enumerate(self):
+            if idx == packet_index:
+                return pkt
+            else:
+                continue
+        raise IndexError('packet index out of range')
 
     def get_parameters(self, packet_count=None):
         return super(FileCapture, self).\
@@ -145,7 +165,6 @@ class FileCapture(CaptureABC):
                 )
 
 
-#TODO: Create a new FileCapture Iterator Class
 class FileCaptureIterator():
     def __init__(self, 
             tshark,
@@ -166,8 +185,10 @@ class FileCaptureIterator():
         self._packet_generator = \
                 self._tshark._packets_from_tshark_sync(
                         )
+
     def __next__(self):
         return next(self._packet_generator)
+
     def __iter__(self):
         return self
 
